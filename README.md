@@ -80,6 +80,18 @@ serial-scan rotulos --definir "L8:01-03=Leitura de temperatura"
 serial-scan rotulos
 ```
 
+### As três formas de rodar
+
+```bash
+serial-scan demo                      # comando instalado
+python -m serial_scan demo            # como módulo
+python serial_scan/__main__.py demo   # arquivo solto (botão Run do VS Code)
+```
+
+As três são equivalentes. A terceira funciona mesmo sem `pip install`, porque
+o `__main__.py` cai num import absoluto quando percebe que foi executado fora
+do contexto de pacote.
+
 ### Interface gráfica
 
 ```bash
@@ -248,10 +260,14 @@ serial e sem Tk.
 
 ```bash
 pip install -e ".[dev]"
-pytest
+python -m pytest
 ```
 
-285 testes. A auto-detecção é verificada ponta a ponta contra o simulador,
+O `[dev]` é o que traz o pytest: `pip install -e .` sozinho instala só o
+`pyserial`. E `python -m pytest` em vez de `pytest` direto dispensa que o
+diretório de scripts do Python esteja no PATH — detalhe que morde no Windows.
+
+290 testes. A auto-detecção é verificada ponta a ponta contra o simulador,
 que renderiza o tráfego como níveis lógicos no fio e depois o decodifica com
 a configuração que estiver sendo testada — um palpite errado produz bytes
 genuinamente corrompidos, não uma imitação de corrupção.
