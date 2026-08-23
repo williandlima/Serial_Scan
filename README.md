@@ -98,11 +98,27 @@ do contexto de pacote.
 serial-scan gui
 ```
 
-Uma janela com os cinco passos na ordem: escolher protocolo e porta, botão
-**Identificar automaticamente**, tabela de frames ao vivo, lista de comandos
-segregados à esquerda (os novos aparecem destacados) e um campo de rótulo
-que salva em disco na hora. Clicar em um comando mostra o mapa de campos e
-permite filtrar a tabela de frames só por ele.
+A janela é montada em volta do core: **escolher o protocolo** e **ver os
+comandos novos chegando**.
+
+- **RS-232 / RS-485 / RS-422** em três botões grandes no topo. A escolha muda
+  as heurísticas (offsets de chave, silêncio de frame, inferência de sentido)
+  e fica escrita no título do painel, porque os botões travam durante a
+  captura e o indicador de seleção some junto.
+- **Faixa de aviso** logo abaixo: quando um comando inédito aparece, ela
+  acende em amarelo com a assinatura e os bytes dele.
+- **Lista de comandos** ordenada por padrão com os novos no topo, badge
+  `NOVO`, contagem, sentido, CRC e um exemplo. Verde = já rotulado.
+- **Campo de rótulo** ao lado, que grava em disco na hora (passo 5).
+- **Frames ao vivo** e **registro** embaixo, em segundo plano.
+
+Um detalhe que só ficou claro rodando: nos primeiros segundos de captura
+*todo* comando é inédito — é o inventário do barramento, não uma novidade.
+Acender os sete de uma vez deixava a tela inteira amarela e não destacava
+nada. Então existe uma janela inicial (`BASELINE_SECONDS`) em que os comandos
+entram na lista sem alarde; passada ela, cada comando inédito acende a faixa
+e a linha, que é o que você está esperando ver quando liga o analisador num
+equipamento estranho.
 
 ---
 
@@ -267,10 +283,16 @@ O `[dev]` é o que traz o pytest: `pip install -e .` sozinho instala só o
 `pyserial`. E `python -m pytest` em vez de `pytest` direto dispensa que o
 diretório de scripts do Python esteja no PATH — detalhe que morde no Windows.
 
-290 testes. A auto-detecção é verificada ponta a ponta contra o simulador,
+308 testes. A auto-detecção é verificada ponta a ponta contra o simulador,
 que renderiza o tráfego como níveis lógicos no fio e depois o decodifica com
 a configuração que estiver sendo testada — um palpite errado produz bytes
 genuinamente corrompidos, não uma imitação de corrupção.
+
+Dezoito deles dirigem a **interface gráfica de verdade**: criam a janela,
+iniciam a captura, injetam um comando inédito, conferem que a faixa acende,
+que o destaque expira sozinho e que o rótulo chega ao disco. Em máquina sem
+Tk ou sem display eles se declaram pulados em vez de falhar, e a suíte fecha
+em 290. Para rodá-los num servidor Linux: `xvfb-run -a python -m pytest`.
 
 ## Licença
 
