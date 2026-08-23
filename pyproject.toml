@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "serial-scan"
+version = "0.1.0"
+description = "Analisador de barramentos seriais RS-232/RS-485/RS-422 com identificacao automatica da configuracao e segregacao de comandos"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["serial", "rs232", "rs485", "rs422", "modbus", "uart", "sniffer", "protocolo"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications",
+    "Topic :: System :: Hardware",
+    "Natural Language :: Portuguese (Brazilian)",
+]
+dependencies = [
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+serial-scan = "serial_scan.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["serial_scan*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

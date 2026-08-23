@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# saidas do proprio app
+serial_scan_labels.json
+*.jsonl
+relatorio*.json
