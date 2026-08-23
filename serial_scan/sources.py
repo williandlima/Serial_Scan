@@ -93,21 +93,49 @@ def list_ports() -> list[tuple[str, str]]:
 
 
 class SerialSource(ByteSource):
-    """A real serial port, read through pyserial.
+    """A real serial port, opened as a **passive tap**.
 
-    pyserial hands over a *chunk* of bytes with a single timestamp, so
-    per-byte arrival times are reconstructed backwards from the read instant
-    using the character time of the current configuration. That is accurate
-    enough for gap-based framing, which only needs to tell "one character
-    time" apart from "several character times".
+    This analyser is wired *in parallel* with a live bus: it listens to a
+    conversation between other equipment and must never become a participant.
+    Two things follow from that, and both need explicit care.
+
+    **It never transmits.** There is no write path in this class at all, and
+    :meth:`write` exists only to fail loudly if some future code tries.
+
+    **It must not assert the handshake lines.** This is the subtle one.
+    pyserial defaults to ``rts=True`` and ``dtr=True`` and applies them the
+    moment the port opens. On the great majority of USB-RS485 adapters - and
+    on every MAX485-style breakout - RTS (sometimes DTR) drives *DE*, the
+    driver enable. Opening the port with the defaults therefore switches the
+    adapter's transmitter on and starts driving the pair, colliding with the
+    very traffic being observed. DTR also resets boards that wire it to the
+    reset line, an Arduino among them. So the port is built unopened, the
+    lines are deasserted, and only then is it opened - pyserial stores the
+    state and applies the deasserted values at open, instead of asserting and
+    then dropping them a moment later.
+
+    Timing note: pyserial hands over a *chunk* of bytes with a single
+    timestamp, so per-byte arrival times are reconstructed backwards from the
+    read instant using the character time of the current configuration. That
+    is accurate enough for gap-based framing, which only needs to tell "one
+    character time" apart from "several character times".
     """
 
     supports_reconfigure = True
 
-    def __init__(self, port: str, config: SerialConfig, read_chunk: int = 4096) -> None:
+    def __init__(
+        self,
+        port: str,
+        config: SerialConfig,
+        read_chunk: int = 4096,
+        passive: bool = True,
+        exclusive: bool = True,
+    ) -> None:
         self._port = port
         self._config = config
         self._read_chunk = read_chunk
+        self.passive = passive
+        self.exclusive = exclusive
         self._serial = None
 
     @property
@@ -125,12 +153,41 @@ class SerialSource(ByteSource):
             raise SourceError(
                 "pyserial nao esta instalado. Rode: pip install pyserial"
             ) from exc
+
+        handle = serial.Serial()
+        handle.port = self._port
+        handle.timeout = 0
+        for key, value in self._config.to_pyserial().items():
+            setattr(handle, key, value)
+        # Nenhum controle de fluxo: o grampo nao negocia com ninguem.
+        handle.rtscts = False
+        handle.dsrdtr = False
+        handle.xonxoff = False
+        if self.passive:
+            # Definidos ANTES de abrir: o pyserial guarda o estado e aplica os
+            # valores desligados na abertura, em vez de ligar as linhas e so
+            # depois derruba-las.
+            handle.dtr = False
+            handle.rts = False
+        if self.exclusive:
+            try:
+                handle.exclusive = True
+            except (AttributeError, ValueError):  # pragma: no cover - so no POSIX
+                pass
+
         try:
-            self._serial = serial.Serial(
-                port=self._port, timeout=0, **self._config.to_pyserial()
-            )
+            handle.open()
         except Exception as exc:  # pragma: no cover - hardware dependent
             raise SourceError(f"nao foi possivel abrir {self._port}: {exc}") from exc
+        self._serial = handle
+
+    def write(self, data: bytes) -> None:
+        """Sempre falha: um grampo em paralelo nao pode transmitir."""
+        raise SourceError(
+            "Serial Scan e um analisador passivo, ligado em paralelo ao "
+            "barramento: ele nunca transmite. Se algo tentou escrever na "
+            "porta, e um erro de programacao."
+        )
 
     def close(self) -> None:
         if self._serial is not None:

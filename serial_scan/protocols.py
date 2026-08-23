@@ -58,6 +58,10 @@ class ProtocolProfile:
     baud_candidates: tuple[int, ...]
     description: str
     hints: tuple[str, ...] = field(default_factory=tuple)
+    #: Como ligar o analisador em paralelo ao barramento, sem perturba-lo.
+    tap: tuple[str, ...] = field(default_factory=tuple)
+    #: Quantos sentidos um unico adaptador consegue enxergar neste padrao.
+    directions_per_adapter: int = 1
 
     @property
     def name(self) -> str:
@@ -81,6 +85,15 @@ _RS232 = ProtocolProfile(
         "e duas sessoes de captura.",
         "Cabos longos (>15 m) costumam obrigar a baixar a velocidade.",
     ),
+    tap=(
+        "Ligue o RX do adaptador no fio que voce quer escutar e o GND no GND "
+        "comum. O TX do adaptador fica desconectado.",
+        "Um adaptador ve um sentido so. Para o dialogo completo use dois: um no "
+        "TX do mestre, outro no TX do escravo.",
+        "Nao ligue o TX do analisador em nada: dois transmissores no mesmo fio "
+        "se anulam e derrubam a comunicacao real.",
+    ),
+    directions_per_adapter=1,
 )
 
 _RS485 = ProtocolProfile(
@@ -101,6 +114,17 @@ _RS485 = ProtocolProfile(
         "Silencio de 3,5 caracteres delimita o frame (regra do Modbus RTU).",
         "Se A e B estiverem invertidos a captura vira lixo constante: teste trocar.",
     ),
+    tap=(
+        "Ligue A no A e B no B do barramento, em paralelo, mais o GND de "
+        "referencia. Um so adaptador ja ve os dois sentidos.",
+        "NAO habilite o resistor de terminacao do adaptador: o barramento ja e "
+        "terminado nas duas pontas, e um terceiro terminador carrega a linha.",
+        "O adaptador nao pode acionar o DE (driver enable). O Serial Scan abre "
+        "a porta com RTS e DTR desligados justamente por isso.",
+        "Derive o mais curto possivel: um ramo longo ate o analisador cria "
+        "reflexao no par.",
+    ),
+    directions_per_adapter=2,
 )
 
 _RS422 = ProtocolProfile(
@@ -119,6 +143,15 @@ _RS422 = ProtocolProfile(
         "Capturando um par so voce ve um sentido; capture os dois para o dialogo completo.",
         "O mestre e unico, entao o par de saida do mestre nunca tem colisao.",
     ),
+    tap=(
+        "Sao dois pares. Ligue o adaptador em paralelo no par que voce quer "
+        "escutar (TX+/TX- do mestre, ou TX+/TX- dos escravos), mais o GND.",
+        "Um adaptador por par: para ver pergunta e resposta juntas use dois "
+        "adaptadores e duas sessoes.",
+        "Nao habilite terminacao no ponto de derivacao: o par ja e terminado "
+        "na ponta receptora.",
+    ),
+    directions_per_adapter=1,
 )
 
 PROFILES: dict[Protocol, ProtocolProfile] = {

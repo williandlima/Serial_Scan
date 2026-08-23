@@ -185,6 +185,19 @@ def cmd_protocols(args) -> int:
         )
         for hint in profile.hints:
             print(f"  - {hint}")
+        if profile.tap:
+            sentidos = (
+                "os dois sentidos"
+                if profile.directions_per_adapter > 1
+                else "um sentido por adaptador"
+            )
+            print(f"\n  Ligacao em paralelo ({sentidos}):")
+            for linha in profile.tap:
+                print(f"    * {linha}")
+    print(
+        "\nO Serial Scan e passivo: abre a porta com RTS e DTR desligados e "
+        "nunca transmite."
+    )
     return 0
 
 

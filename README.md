@@ -1,8 +1,10 @@
 # Serial Scan
 
-Analisador de barramentos seriais **RS-232 / RS-485 / RS-422** que descobre
-sozinho a configuração da linha, mostra os frames, separa cada comando novo
-que aparece e guarda um rótulo para cada um.
+Analisador **passivo** de barramentos seriais **RS-232 / RS-485 / RS-422**.
+Você o liga *em paralelo* com um barramento que já está funcionando: ele
+descobre sozinho a configuração da linha, mostra os frames, separa cada
+comando novo que aparece e guarda um rótulo para cada um — sem nunca
+transmitir nada.
 
 Os cinco passos do projeto, na ordem:
 
@@ -13,6 +15,50 @@ Os cinco passos do projeto, na ordem:
 | 3 | Mostrar os dados do frame | `serial_scan/framing.py` |
 | 4 | Identificar e segregar cada comando novo | `serial_scan/commands.py` |
 | 5 | Colocar um rótulo em cada comando | `serial_scan/labels.py` |
+
+---
+
+## Ligação em paralelo: o app nunca transmite
+
+Este é o ponto de partida do projeto, e ele tem consequência no código.
+
+O analisador é um **grampo**: fica em paralelo com uma conversa que já
+existe entre outros equipamentos. Ele não é participante do barramento, e
+tudo depende de ele não se comportar como um.
+
+**O que o código faz por isso.** A porta é aberta com **RTS e DTR
+desligados**, e desligados *antes* da abertura, não depois. Não é
+preciosismo: o pyserial abre com `rts=True` e `dtr=True` por padrão, e na
+maioria esmagadora dos adaptadores USB-RS485 — e em toda placa MAX485 — o
+**RTS aciona o DE**, o *driver enable*. Abrir com o padrão liga o
+transmissor do adaptador, que passa a dirigir o par e colide exatamente com
+o tráfego que você queria observar. O DTR, por sua vez, reinicia placas que
+o ligam ao pino de reset (Arduino entre elas). Ligar as linhas e derrubá-las
+logo em seguida também não serve: o pulso já teria atropelado um frame em
+trânsito. Por isso o objeto é construído fechado, as linhas são zeradas, e
+só então a porta abre.
+
+Não existe caminho de escrita na classe da porta. O método `write()` existe
+só para falhar em voz alta se algum código futuro tentar usá-lo, e os testes
+em `tests/test_passive_tap.py` travam essas garantias — eles falham contra a
+versão anterior do código, que era vulnerável.
+
+**Como ligar, por padrão elétrico** (também em `serial-scan protocolos`, e
+no botão *Como ligar em paralelo* da interface):
+
+| | Ligação | Sentidos por adaptador |
+|---|---|---|
+| **RS-485** | A no A, B no B, mais o GND de referência | **2** — half duplex num par só: pergunta e resposta caem na mesma captura |
+| **RS-422** | Em paralelo no par que quer escutar (TX± do mestre *ou* dos escravos), mais GND | 1 — use dois adaptadores para o diálogo completo |
+| **RS-232** | RX do adaptador no fio a escutar, GND no GND comum; TX do adaptador desconectado | 1 — um no TX do mestre, outro no TX do escravo |
+
+Duas armadilhas de bancada que valem repetir:
+
+- **Não habilite o resistor de terminação** do adaptador de captura. O
+  barramento já é terminado nas duas pontas; um terceiro terminador carrega
+  a linha e degrada o sinal de todo mundo.
+- **Derive o mais curto possível.** Um ramo longo até o analisador cria
+  reflexão no par.
 
 ---
 
@@ -283,7 +329,7 @@ O `[dev]` é o que traz o pytest: `pip install -e .` sozinho instala só o
 `pyserial`. E `python -m pytest` em vez de `pytest` direto dispensa que o
 diretório de scripts do Python esteja no PATH — detalhe que morde no Windows.
 
-308 testes. A auto-detecção é verificada ponta a ponta contra o simulador,
+324 testes. A auto-detecção é verificada ponta a ponta contra o simulador,
 que renderiza o tráfego como níveis lógicos no fio e depois o decodifica com
 a configuração que estiver sendo testada — um palpite errado produz bytes
 genuinamente corrompidos, não uma imitação de corrupção.
@@ -292,7 +338,12 @@ Dezoito deles dirigem a **interface gráfica de verdade**: criam a janela,
 iniciam a captura, injetam um comando inédito, conferem que a faixa acende,
 que o destaque expira sozinho e que o rótulo chega ao disco. Em máquina sem
 Tk ou sem display eles se declaram pulados em vez de falhar, e a suíte fecha
-em 290. Para rodá-los num servidor Linux: `xvfb-run -a python -m pytest`.
+em 306. Para rodá-los num servidor Linux: `xvfb-run -a python -m pytest`.
+
+Outros dezesseis, em `tests/test_passive_tap.py`, travam a garantia de que o
+analisador não interfere no barramento: RTS e DTR desligados, desligados
+*antes* da abertura, sem controle de fluxo, e nenhum caminho de escrita.
+Eles falham contra a versão anterior do código.
 
 ## Licença
 

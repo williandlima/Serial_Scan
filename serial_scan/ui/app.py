@@ -150,6 +150,9 @@ class SerialScanApp(ttk.Frame):
             chooser, text="", foreground=PALETTE["muted"], wraplength=420, justify="left"
         )
         self.hint_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ttk.Button(
+            chooser, text="Como ligar em paralelo", command=self._show_tap_help
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
         controls = ttk.LabelFrame(header, text="2. Fonte e configuracao da linha", padding=8)
         controls.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
@@ -413,6 +416,28 @@ class SerialScanApp(ttk.Frame):
             self._set_status(
                 "O protocolo so vale a partir da proxima captura: pare e inicie de novo."
             )
+
+    def _show_tap_help(self) -> None:
+        """Como grampear o barramento sem perturba-lo.
+
+        O analisador fica em paralelo com uma conversa que ja existe, entao
+        errar a ligacao nao e so nao ver nada: e derrubar o barramento de
+        producao. Vale ter isso a um clique.
+        """
+        profile = get_profile(self.protocol_var.get())
+        sentidos = (
+            "Um unico adaptador ja ve os dois sentidos."
+            if profile.directions_per_adapter > 1
+            else "Um adaptador ve um sentido; use dois para o dialogo completo."
+        )
+        corpo = "\n\n".join(f"- {linha}" for linha in profile.tap)
+        messagebox.showinfo(
+            f"Ligar em paralelo - RS-{profile.protocol.short}",
+            f"{profile.description}\n\n{sentidos}\n\n{corpo}\n\n"
+            f"O Serial Scan e passivo: abre a porta com RTS e DTR desligados "
+            f"(em muitos adaptadores RTS aciona o DE do transmissor) e nunca "
+            f"escreve na porta.",
+        )
 
     def _current_config(self) -> SerialConfig | None:
         try:
