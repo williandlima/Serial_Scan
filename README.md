@@ -329,7 +329,7 @@ O `[dev]` é o que traz o pytest: `pip install -e .` sozinho instala só o
 `pyserial`. E `python -m pytest` em vez de `pytest` direto dispensa que o
 diretório de scripts do Python esteja no PATH — detalhe que morde no Windows.
 
-324 testes. A auto-detecção é verificada ponta a ponta contra o simulador,
+328 testes. A auto-detecção é verificada ponta a ponta contra o simulador,
 que renderiza o tráfego como níveis lógicos no fio e depois o decodifica com
 a configuração que estiver sendo testada — um palpite errado produz bytes
 genuinamente corrompidos, não uma imitação de corrupção.
@@ -338,7 +338,7 @@ Dezoito deles dirigem a **interface gráfica de verdade**: criam a janela,
 iniciam a captura, injetam um comando inédito, conferem que a faixa acende,
 que o destaque expira sozinho e que o rótulo chega ao disco. Em máquina sem
 Tk ou sem display eles se declaram pulados em vez de falhar, e a suíte fecha
-em 306. Para rodá-los num servidor Linux: `xvfb-run -a python -m pytest`.
+em 310. Para rodá-los num servidor Linux: `xvfb-run -a python -m pytest`.
 
 Outros dezesseis, em `tests/test_passive_tap.py`, travam a garantia de que o
 analisador não interfere no barramento: RTS e DTR desligados, desligados

@@ -27,6 +27,13 @@ from .portconfig import SerialConfig
 from .protocols import Protocol, ProtocolProfile, get_profile
 from .sources import ByteSource, CaptureWriter, ReplaySource, SimulatedSource
 
+#: Quantos frames o detector de checksum guarda para comparar.
+CHECKSUM_POOL_SIZE = 32
+#: Teto do intervalo entre tentativas de deteccao (em frames).
+CHECKSUM_MAX_INTERVAL = 512
+#: Depois disso a busca por checksum para de vez.
+CHECKSUM_GIVE_UP_AFTER = 4000
+
 
 class DirectionInferencer:
     """Guess which side of a half-duplex bus sent each frame.
@@ -146,6 +153,10 @@ class ScanSession:
         self._lock = threading.RLock()
         #: Frames kept aside to auto-detect the checksum once there are enough.
         self._checksum_pool: list[bytes] = []
+        self._checksum_interval = 1
+        self._checksum_countdown = 1
+        self._checksum_tried = 0
+        self._checksum_exhausted = False
 
         if self.labels is not None:
             self.catalog.apply_labels(
@@ -176,6 +187,10 @@ class ScanSession:
                 )
             self._recent.clear()
             self._checksum_pool.clear()
+            self._checksum_interval = 1
+            self._checksum_countdown = 1
+            self._checksum_tried = 0
+            self._checksum_exhausted = False
             self.stats = SessionStats(started=time.monotonic())
 
     # -- detection --------------------------------------------------------
@@ -249,21 +264,63 @@ class ScanSession:
 
     def _verify_checksum(self, frame: Frame) -> None:
         if self.checksum is None:
-            # Not known yet: collect frames until there is enough to identify it.
-            self._checksum_pool.append(frame.data)
-            if len(self._checksum_pool) >= 8:
-                match = detect_checksum(self._checksum_pool)
-                if match is not None:
-                    self.adopt_checksum(match)
-                elif len(self._checksum_pool) >= 64:
-                    # Give up and stop growing the pool; many protocols have none.
-                    self._checksum_pool = self._checksum_pool[-16:]
+            self._try_detect_checksum(frame)
         # Deliberately re-checked rather than returned early above: the frame
         # that *triggers* the adoption is not yet in the catalog history, so
         # the back-fill in recount_checksums() cannot see it. Without this it
         # would stay unverified for ever, one frame short of the total.
         if self.checksum is not None:
             frame.checksum_ok = self.checksum.check(frame.data)
+
+    def _try_detect_checksum(self, frame: Frame) -> None:
+        """Look for the trailer algorithm, backing off as attempts fail.
+
+        Detection costs ``pool x algorithms x frame length`` byte operations,
+        all of it in Python. Running it on *every* frame is fine for the two
+        or three frames it usually takes to succeed, and ruinous when it never
+        does - which is precisely the case this tool exists for, a proprietary
+        protocol whose checksum is not in the table. Measured on a bus with an
+        unrecognised trailer, retrying every frame cost 140 us per byte
+        against 1.7 us once an algorithm is known: an 80x penalty, enough to
+        peg a CPU at 115200 baud.
+
+        So the interval between attempts doubles on each failure, and after a
+        budget of frames the search stops for good. New evidence never stops
+        arriving on a live bus, but if 4000 frames were not enough, another
+        4000 will not be either.
+        """
+        if self._checksum_exhausted:
+            return
+        self._checksum_pool.append(frame.data)
+        if len(self._checksum_pool) > CHECKSUM_POOL_SIZE:
+            del self._checksum_pool[:-CHECKSUM_POOL_SIZE]
+
+        self._checksum_countdown -= 1
+        if self._checksum_countdown > 0 or len(self._checksum_pool) < 8:
+            return
+
+        match = detect_checksum(self._checksum_pool)
+        if match is not None:
+            self.adopt_checksum(match)
+            return
+
+        self._checksum_interval = min(self._checksum_interval * 2, CHECKSUM_MAX_INTERVAL)
+        self._checksum_countdown = self._checksum_interval
+        self._checksum_tried += 1
+        if self.stats.frames_seen >= CHECKSUM_GIVE_UP_AFTER:
+            self._checksum_exhausted = True
+            self._checksum_pool.clear()
+            self._emit(
+                SessionEvent(
+                    "status",
+                    text=(
+                        f"Nenhum checksum conhecido confere apos "
+                        f"{self.stats.frames_seen} frames: busca encerrada. O "
+                        f"protocolo pode nao ter checksum, ou usar um algoritmo "
+                        f"proprietario."
+                    ),
+                )
+            )
 
     def adopt_checksum(self, match: ChecksumMatch | ChecksumAlgorithm | str) -> None:
         if isinstance(match, ChecksumMatch):
@@ -275,6 +332,7 @@ class ScanSession:
         self.checksum = algorithm
         self.catalog.checksum_width = algorithm.width
         self._checksum_pool.clear()
+        self._checksum_exhausted = True
         self._emit(SessionEvent("status", text=f"Checksum identificado: {algorithm.name}"))
         self.recount_checksums()
 

@@ -297,3 +297,92 @@ class TestTruncatedFrames:
         # whole cycle closes every frame on an observed silence.
         built.run_for(built.source.duration)
         assert built.stats.truncated == 0
+
+
+class TestBuscaDeChecksum:
+    """A busca pelo algoritmo do trailer precisa desistir com elegancia.
+
+    Detectar custa ``lote x algoritmos x tamanho do frame`` operacoes, tudo em
+    Python. Rodar isso a cada frame e barato nas duas ou tres tentativas que
+    normalmente bastam, e ruinoso quando nunca da certo - que e justamente o
+    caso desta ferramenta, um protocolo proprietario cujo checksum nao esta na
+    tabela.
+    """
+
+    def _contando_deteccoes(self, monkeypatch):
+        from serial_scan import session as sessao
+
+        chamadas = []
+        original = sessao.detect_checksum
+
+        def espiao(frames, *args, **kwargs):
+            chamadas.append(len(frames))
+            return original(frames, *args, **kwargs)
+
+        monkeypatch.setattr(sessao, "detect_checksum", espiao)
+        return chamadas
+
+    def test_sem_checksum_a_deteccao_recua(self, monkeypatch) -> None:
+        from serial_scan.sources import ScriptedFrame
+
+        chamadas = self._contando_deteccoes(monkeypatch)
+        script = [
+            ScriptedFrame(bytes([s, 0x03, 0x00, 0x6B, 0x00, i % 7]), gap_chars=10.0, checksum=None)
+            for i in range(20)
+            for s in (1, 2, 3)
+        ]
+        built, _ = session_from_simulator(
+            TRUE_CONFIG, Protocol.RS485, script=script, detect=False
+        )
+        built.run_for(4.0)
+
+        assert built.checksum is None
+        assert built.stats.frames_seen > 200
+        # Sem recuo seriam centenas de chamadas, uma por frame.
+        assert len(chamadas) < 20, f"detectou {len(chamadas)} vezes em {built.stats.frames_seen} frames"
+
+    def test_o_lote_nao_cresce_sem_limite(self, monkeypatch) -> None:
+        from serial_scan.session import CHECKSUM_POOL_SIZE
+        from serial_scan.sources import ScriptedFrame
+
+        chamadas = self._contando_deteccoes(monkeypatch)
+        script = [
+            ScriptedFrame(bytes([s, 0x03, i % 5]), gap_chars=10.0, checksum=None)
+            for i in range(20)
+            for s in (1, 2)
+        ]
+        built, _ = session_from_simulator(
+            TRUE_CONFIG, Protocol.RS485, script=script, detect=False
+        )
+        built.run_for(3.0)
+        assert chamadas, "a deteccao nunca chegou a rodar"
+        assert max(chamadas) <= CHECKSUM_POOL_SIZE
+
+    def test_desiste_e_avisa(self, monkeypatch) -> None:
+        from serial_scan import session as sessao
+        from serial_scan.sources import ScriptedFrame
+
+        monkeypatch.setattr(sessao, "CHECKSUM_GIVE_UP_AFTER", 40)
+        script = [
+            ScriptedFrame(bytes([s, 0x03, i % 5]), gap_chars=10.0, checksum=None)
+            for i in range(20)
+            for s in (1, 2)
+        ]
+        built, _ = session_from_simulator(
+            TRUE_CONFIG, Protocol.RS485, script=script, detect=False
+        )
+        built.run_for(3.0)
+
+        avisos = [e.text for e in built.drain_events(limit=100_000) if e.kind == "status"]
+        assert any("busca encerrada" in texto for texto in avisos), avisos
+        assert built._checksum_exhausted
+
+    def test_um_checksum_de_verdade_ainda_e_achado_rapido(self) -> None:
+        """O recuo nao pode atrapalhar o caso normal."""
+        chamadas_ate_achar = []
+        built, _ = session_from_simulator(TRUE_CONFIG, Protocol.RS485, detect=False)
+        built.run_for(1.5)
+        assert built.checksum is not None
+        assert built.checksum.name == "CRC-16/MODBUS"
+        assert built.stats.checksum_bad == 0
+        del chamadas_ate_achar
